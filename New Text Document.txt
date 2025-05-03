@@ -1,0 +1,104 @@
+#include <SoftwareSerial.h>
+#include <LiquidCrystal.h>
+
+#define ALCOHOL_SENSOR_PIN A0 
+#define BUZZER_PIN 10
+#define MOTOR_PIN 12
+#define RED_LED_PIN 13
+#define GREEN_LED_PIN 11
+
+float alcoholLevel = 0;
+const int RS_PIN = 9, EN_PIN = 8, D4_PIN = 7, D5_PIN = 6, D6_PIN = 5, D7_PIN = 4;
+
+LiquidCrystal lcd(RS_PIN, EN_PIN, D4_PIN, D5_PIN, D6_PIN, D7_PIN);
+SoftwareSerial SIM900A(2, 3); // TX and RX respectively
+
+void sendMessage() {
+  Serial.println("Sending message, please wait...");
+  SIM900A.println("AT+CMGF=1"); // Set SMS text mode 
+  delay(1000);
+  checkResponse();
+  SIM900A.println("AT+CMGS=\"+917996350615\"\r"); // Receiver's mobile number
+  delay(1000);
+  checkResponse();
+  String message = "Alcohol detected: " + String(getlevel())+"%" + ", machine no:@1234"; 
+  SIM900A.println(message); // Message content
+  delay(100);
+  SIM900A.println((char)26); // ASCII code of CTRL+Z to send the SMS
+  delay(1000);
+  checkResponse();
+  Serial.println("Message sent successfully");
+}
+float getlevel() {
+  float level = analogRead(ALCOHOL_SENSOR_PIN); // Read the analog value
+  level = (level / 1023) * 100; // Convert to percentage
+  return level; // Return the percentage value
+}
+
+void checkResponse() {
+  if (SIM900A.available()) {
+    String response = SIM900A.readString();
+    Serial.println("Response: " + response);
+    if (response.indexOf("ERROR") != -1) {
+      Serial.println("Error in sending message");
+    }
+  } else {
+    Serial.println("No response from GSM module");
+  }
+}
+
+void setup() {
+  SIM900A.begin(9600); // Initialize GSM module at baud rate 9600
+  Serial.begin(9600); // Initialize serial monitor at baud rate 9600
+  Serial.println("Text message module ready & verified");
+
+  lcd.begin(16, 2); // Initialize the LCD
+  pinMode(ALCOHOL_SENSOR_PIN, INPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(MOTOR_PIN, OUTPUT);
+
+  lcd.setCursor(0, 0);
+  lcd.print("ALCOHOL DETECTOR");
+  lcd.setCursor(4, 1);
+  lcd.print("WELCOME");
+  delay(1000);
+  lcd.clear();
+}
+
+void loop() {
+  alcoholLevel = analogRead(ALCOHOL_SENSOR_PIN);
+  alcoholLevel = (alcoholLevel / 1023) * 100; // Convert to percentage
+  lcd.setCursor(0, 1);
+  lcd.print("PERCENT:"); 
+  lcd.setCursor(9, 1);
+  lcd.print(alcoholLevel);
+  lcd.print("%");
+
+  if (alcoholLevel >= 50) {
+    digitalWrite(GREEN_LED_PIN, LOW);
+    digitalWrite(RED_LED_PIN, HIGH);
+    digitalWrite(BUZZER_PIN, HIGH);
+    digitalWrite(MOTOR_PIN, LOW);
+    lcd.setCursor(0, 0);
+    lcd.print("STATUS: HIGH");
+    delay(1000);
+    lcd.clear();
+    sendMessage(); // Send SMS when alcohol level is high
+  } else {
+    lcd.setCursor(0, 0);
+    lcd.print("STATUS: NORMAL");
+    delay(100);
+    lcd.clear();
+    digitalWrite(GREEN_LED_PIN, HIGH);
+    digitalWrite(RED_LED_PIN, LOW);
+    digitalWrite(BUZZER_PIN, LOW);
+    digitalWrite(MOTOR_PIN, HIGH);
+  }
+
+  // Check for incoming data from the GSM module
+  if (SIM900A.available() > 0) {
+    Serial.write(SIM900A.read()); // Forward data from GSM module to serial monitor
+  }
+}
